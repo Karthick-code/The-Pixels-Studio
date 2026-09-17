@@ -1,0 +1,1463 @@
+import React, { useEffect, useState } from "react";
+import {
+  Link,
+  useNavigate,
+  useLocation,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  Sliders,
+  Users,
+  Mail,
+  Phone,
+  Calendar,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle,
+  CheckCircle2,
+  ChevronRight,
+  UserCheck,
+  Inbox,
+  Plus,
+  Coins,
+  Wallet,
+  ClipboardList,
+  X,
+  Edit2,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import API from "../services/api";
+import { Navbar } from "../components/Navbar";
+import { Footer } from "../components/Footer";
+
+export const Dashboard = () => {
+  const { isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [systemSyncing, setSystemSyncing] = useState(false);
+
+  // Add Client Form States
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newInquiryMsg, setNewInquiryMsg] = useState("");
+  const [newStatus, setNewStatus] = useState("new"); // Default to 'new' lead option
+  const [newRequirements, setNewRequirements] = useState("");
+  const [newPayment, setNewPayment] = useState("");
+  const [newAdvance, setNewAdvance] = useState("");
+  const [isSubmittingNewClient, setIsSubmittingNewClient] = useState(false);
+  const [addClientError, setAddClientError] = useState("");
+
+  // Edit Client Form States
+  const [editingLead, setEditingLead] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editRequirements, setEditRequirements] = useState("");
+  const [editPayment, setEditPayment] = useState("");
+  const [editAdvance, setEditAdvance] = useState("");
+  const [editStatus, setEditStatus] = useState("converted");
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [editClientError, setEditClientError] = useState("");
+
+  // SMTP Diagnostics state hooks
+  const [smtpConfig, setSmtpConfig] = useState(null);
+  const [smtpLoading, setSmtpLoading] = useState(false);
+  const [testRecipient, setTestRecipient] = useState("");
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [testError, setTestError] = useState("");
+
+  const isSmtpTab = location.pathname.includes("/smtp");
+
+  // Guard: if not authenticated, redirect to /login
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isAuthenticated, navigate]);
+
+  const loadLeads = () => {
+    setSystemSyncing(true);
+    API.get("/leads")
+      .then((res) => {
+        setLeads(res.data);
+        setErrorMsg("");
+      })
+      .catch((err) => {
+        console.error("Error loading leads:", err);
+        setErrorMsg("Failed to synchronize inquiries database.");
+      })
+      .finally(() => {
+        setLoading(false);
+        setSystemSyncing(false);
+      });
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadLeads();
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isSmtpTab && isAuthenticated) {
+      setSmtpLoading(true);
+      // API.get("/leads/smtp-status")
+      //   .then((res) => {
+      //     console.log("STATUS:", res.status);
+      //     console.log("DATA:", res.data);
+      //     setSmtpConfig(res.data);
+      //   })
+      //   .catch((err) => {
+      //     console.log(err);
+      //   });
+      API.get("/leads/smtp-status")
+        .then((res) => {
+          setSmtpConfig(res.data);
+          if (res.data?.COMPANY_EMAIL) {
+            setTestRecipient(res.data.COMPANY_EMAIL);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load SMTP status:", err);
+          setErrorMsg("Could not fetch remote SMTP configuration metadata.");
+        })
+        .finally(() => {
+          setSmtpLoading(false);
+        });
+    }
+  }, [isSmtpTab, isAuthenticated]);
+
+  const handleTestSmtp = (e) => {
+    e.preventDefault();
+    setTestLoading(true);
+    setTestResult(null);
+    setTestError("");
+
+    API.post("/leads/smtp-test", { testRecipient: testRecipient.trim() })
+      .then((res) => {
+        setTestResult(res.data);
+      })
+      .catch((err) => {
+        console.error("SMTP Test Error:", err);
+        const errMsg =
+          err.response?.data?.msg ||
+          err.response?.data?.details?.error ||
+          "SMTP connection handshake failed.";
+        setTestError(errMsg);
+
+        // Populate fallback error details if backend or network returned a sparse/failure object
+        const fallbackDetails = err.response?.data?.details || {
+          error:
+            err.response?.data?.msg ||
+            err.message ||
+            "Connection refused or server timeout.",
+          code:
+            err.response?.data?.details?.code || err.code || "HANDSHAKE_FAIL",
+          host: smtpConfig?.SMTP_HOST || "Not Set",
+          port: smtpConfig?.SMTP_PORT || "587",
+        };
+        setTestResult({ success: false, details: fallbackDetails });
+      })
+      .finally(() => {
+        setTestLoading(false);
+      });
+  };
+
+  const handleUpdateStatus = (id, newStatus) => {
+    API.put(`/leads/${id}`, { status: newStatus })
+      .then(() => {
+        setLeads((prev) =>
+          prev.map((lead) =>
+            lead._id === id ? { ...lead, status: newStatus } : lead,
+          ),
+        );
+      })
+      .catch((err) => {
+        console.error("Error updating lead status:", err);
+        // Fallback or visual warning
+      });
+  };
+
+  const openEdit = (lead) => {
+    setEditingLead(lead);
+    setEditName(lead.name || "");
+    setEditEmail(lead.email || "");
+    setEditPhone(lead.phone || "");
+    setEditRequirements(lead.requirements || "");
+    setEditPayment(lead.paymentAmount || "");
+    setEditAdvance(lead.advancePayment || "");
+    setEditStatus(lead.status || "converted");
+    setEditClientError("");
+  };
+
+  const handleAddClientSubmit = (e) => {
+    e.preventDefault();
+    if (!newName.trim() || !newEmail.trim() || !newPhone.trim()) {
+      setAddClientError("FullName, Email, and Phone are required fields.");
+      return;
+    }
+    setAddClientError("");
+    setIsSubmittingNewClient(true);
+
+    const payload = {
+      name: newName.trim(),
+      email: newEmail.trim(),
+      phone: newPhone.trim(),
+      message: newInquiryMsg.trim() || "Manually added via CRM Dashboard",
+      status: newStatus,
+      requirements: newRequirements.trim(),
+      paymentAmount: newPayment.trim(),
+      advancePayment: newAdvance.trim(),
+    };
+
+    API.post("/leads", payload)
+      .then((res) => {
+        setLeads((prev) => [res.data, ...prev]);
+        setIsAddModalOpen(false);
+        // Clear Form Fields
+        setNewName("");
+        setNewEmail("");
+        setNewPhone("");
+        setNewInquiryMsg("");
+        setNewRequirements("");
+        setNewPayment("");
+        setNewAdvance("");
+        setNewStatus("new");
+      })
+      .catch((err) => {
+        console.error("Error creating client:", err);
+        setAddClientError(
+          err.response?.data?.msg ||
+            "Database failure creating new client registry.",
+        );
+      })
+      .finally(() => {
+        setIsSubmittingNewClient(false);
+      });
+  };
+
+  const handleEditClientSubmit = (e) => {
+    e.preventDefault();
+    if (!editingLead) return;
+    if (!editName.trim() || !editEmail.trim() || !editPhone.trim()) {
+      setEditClientError("FullName, Email, and Phone are required fields.");
+      return;
+    }
+    setEditClientError("");
+    setIsSubmittingEdit(true);
+
+    const payload = {
+      name: editName.trim(),
+      email: editEmail.trim(),
+      phone: editPhone.trim(),
+      status: editStatus,
+      requirements: editRequirements.trim(),
+      paymentAmount: editPayment.trim(),
+      advancePayment: editAdvance.trim(),
+    };
+
+    API.put(`/leads/${editingLead._id}`, payload)
+      .then((res) => {
+        setLeads((prev) =>
+          prev.map((l) =>
+            l._id === editingLead._id ? { ...l, ...res.data } : l,
+          ),
+        );
+        setEditingLead(null);
+      })
+      .catch((err) => {
+        console.error("Error editing client:", err);
+        setEditClientError(
+          err.response?.data?.msg ||
+            "Database failure modifying client registry.",
+        );
+      })
+      .finally(() => {
+        setIsSubmittingEdit(false);
+      });
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#0F0F0F] flex items-center justify-center">
+        <Loader2 className="h-6 w-6 text-[#D4AF37] animate-spin" />
+      </div>
+    );
+  }
+
+  // Calculate Metrics
+  const totalInquiries = leads.length;
+  const newCount = leads.filter((l) => l.status === "new").length;
+  const contactedCount = leads.filter((l) => l.status === "contacted").length;
+  const customersCount = leads.filter((l) => l.status === "converted").length;
+
+  // Render specific tab subviews based on location
+  const isCustomersTab = location.pathname.includes("/customers");
+
+  // Filter content
+  const activeLeads = isCustomersTab
+    ? leads.filter((l) => l.status === "converted")
+    : leads;
+  //  console.log(smtpConfig) /// test
+  return (
+    <div
+      className="min-h-screen flex flex-col bg-[#0F0F0F] text-[#F5F5F5]"
+      id="crm_dashboard_root"
+    >
+      <Navbar />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full flex-grow">
+        {/* Dashboard Top Header bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between border-b border-[#2A2A2A] pb-6 mb-8 gap-4">
+          <div>
+            <h1 className="text-2xl font-serif italic font-light tracking-tight text-white flex items-center space-x-2.5">
+              <Sliders className="h-4 w-4 text-[#D4AF37]" />
+              <span>Studio CRM Panel</span>
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-[#666] mt-1">
+              Track inquiries, convert photoshoots, and manage project clients.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center space-x-1.5 px-4 font-mono py-2 bg-[#D4AF37] hover:bg-[#c49f2a] text-[10px] font-bold uppercase tracking-widest text-black rounded-sm transition-all cursor-pointer shadow-sm shadow-[#D4AF37]/10"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Register Client</span>
+            </button>
+            <button
+              onClick={loadLeads}
+              disabled={systemSyncing}
+              className="flex items-center space-x-1.5 px-3 py-2 bg-[#141414] hover:bg-[#1A1A1A] text-[10px] font-bold uppercase tracking-widest font-mono text-gray-300 rounded-sm border border-[#2A2A2A] transition-all cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 text-[#D4AF37] ${systemSyncing ? "animate-spin" : ""}`}
+              />
+              <span>Refresh Records</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Statistical Metrics Widgets */}
+        <section
+          className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10"
+          id="crm_analytics_blocks"
+        >
+          {/* Tile 1 */}
+          <div className="p-5 bg-[#141414] border border-[#2A2A2A] rounded-sm relative overflow-hidden flex items-center space-x-4">
+            <div className="p-2.5 bg-[#D4AF37]/5 rounded-sm border border-[#D4AF37]/10 text-[#D4AF37]">
+              <Inbox className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-[10px] uppercase tracking-widest font-mono font-bold text-[#666] mb-0.5">
+                Gross Leads
+              </span>
+              <span className="text-2xl font-serif text-white">
+                {totalInquiries}
+              </span>
+            </div>
+          </div>
+
+          {/* Tile 2 */}
+          <div className="p-5 bg-[#141414] border border-[#2A2A2A] rounded-sm relative overflow-hidden flex items-center space-x-4">
+            <div className="p-2.5 bg-red-500/5 rounded-sm border border-red-500/10 text-red-400">
+              <AlertCircle className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-[10px] uppercase tracking-widest font-mono font-bold text-[#666] mb-0.5">
+                Unreached
+              </span>
+              <span className="text-2xl font-serif text-white">{newCount}</span>
+            </div>
+          </div>
+
+          {/* Tile 3 */}
+          <div className="p-5 bg-[#141414] border border-[#2A2A2A] rounded-sm relative overflow-hidden flex items-center space-x-4">
+            <div className="p-2.5 bg-[#D4AF37]/5 rounded-sm border border-[#D4AF37]/10 text-[#D4AF37]">
+              <Phone className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-[10px] uppercase tracking-widest font-mono font-bold text-[#666] mb-0.5">
+                Sales Touch
+              </span>
+              <span className="text-2xl font-serif text-white">
+                {contactedCount}
+              </span>
+            </div>
+          </div>
+
+          {/* Tile 4 (High contrast active client metric gold background) */}
+          <div className="p-5 bg-[#D4AF37] border border-[#2A2A2A] rounded-sm relative overflow-hidden flex items-center space-x-4 text-black">
+            <div className="p-2.5 bg-black/10 rounded-sm border border-black/15 text-black">
+              <UserCheck className="h-4 w-4 text-black" />
+            </div>
+            <div>
+              <span className="block text-[10px] uppercase tracking-widest font-mono font-bold text-black/75 mb-0.5">
+                Clients
+              </span>
+              <span className="text-2xl font-serif font-bold text-black">
+                {customersCount}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* Tab Toggle Navigation */}
+        <div
+          className="flex border-b border-[#2A2A2A] mb-8 animate-fade-in"
+          id="crm_filter_tabs"
+        >
+          <Link
+            to="/dashboard/leads"
+            className={`px-5 py-3 text-[10px] uppercase font-bold tracking-widest font-mono border-b-2 transition-all cursor-pointer ${
+              !isCustomersTab && !isSmtpTab
+                ? "border-[#D4AF37] text-[#D4AF37] bg-[#D4AF37]/5"
+                : "border-transparent text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            Leads Board ({totalInquiries})
+          </Link>
+          <Link
+            to="/dashboard/customers"
+            className={`px-5 py-3 text-[10px] uppercase font-bold tracking-widest font-mono border-b-2 transition-all cursor-pointer ${
+              isCustomersTab
+                ? "border-[#D4AF37] text-[#D4AF37] bg-[#D4AF37]/5"
+                : "border-transparent text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            Studio Customers ({customersCount})
+          </Link>
+          <Link
+            to="/dashboard/smtp"
+            className={`px-5 py-3 text-[10px] uppercase font-bold tracking-widest font-mono border-b-2 transition-all cursor-pointer ${
+              isSmtpTab
+                ? "border-[#D4AF37] text-[#D4AF37] bg-[#D4AF37]/5"
+                : "border-transparent text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            SMTP Mail Diagnostics
+          </Link>
+        </div>
+
+        {/* Error notification banner */}
+        {errorMsg && (
+          <div className="p-4 bg-[#1A1111] border border-red-900/30 text-red-500 text-xs rounded-sm mb-6">
+            ⚠️ {errorMsg}
+          </div>
+        )}
+
+        {/* Core Tables List Layout */}
+        {isSmtpTab ? (
+          // SMTP Diagnostics UI Panel
+          <div
+            className="bg-[#141414] border border-[#2A2A2A] rounded-sm p-6 sm:p-8 animate-fade-in"
+            id="smtp_diagnostics_panel"
+          >
+            <div className="border-b border-[#2A2A2A] pb-5 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-serif italic text-white">
+                  Email Gateway Live Diagnostics
+                </h2>
+                <p className="text-[10px] uppercase tracking-widest text-[#666] mt-1">
+                  Check environment variables, connection handshake status, and
+                  trigger diagnostic messages.
+                </p>
+              </div>
+              <span
+                className={`text-[10px] font-mono font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm shrink-0 self-start sm:self-center ${
+                  smtpConfig?.activeMode === "emailjs"
+                    ? "bg-cyan-500/10 border border-cyan-500/20 text-cyan-400"
+                    : smtpConfig?.activeMode === "live"
+                      ? "bg-green-500/10 border border-green-500/20 text-green-400 animate-pulse"
+                      : "bg-yellow-500/10 border border-yellow-500/20 text-yellow-500"
+                }`}
+              >
+                {smtpConfig?.activeMode === "emailjs"
+                  ? "● Mode: Live EmailJS REST Client"
+                  : smtpConfig?.activeMode === "live"
+                    ? "● Mode: Live SMTP Relay"
+                    : "● Mode: Local Simulation Fallback"}
+              </span>
+            </div>
+
+            {smtpLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 text-[#D4AF37] animate-spin mr-2" />
+                <span className="text-gray-500 text-xs font-mono uppercase tracking-wider">
+                  Retrieving gateway configurations...
+                </span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* CONFIG CARD */}
+                <div className="lg:col-span-5 space-y-6">
+                  <div className="p-5 bg-[#0F0F0F] border border-[#2A2A2A] rounded-sm">
+                    <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#D4AF37] mb-4 pb-2 border-b border-[#222]">
+                      Active Gateway Configuration
+                    </h3>
+
+                    <div className="space-y-4 font-mono text-[11px]">
+                      {/* EMAILJS SETTINGS */}
+                      <div className="space-y-2">
+                        <span className="block text-[9px] uppercase tracking-widest text-[#666] font-semibold">
+                          EmailJS Client Status (HTTPS)
+                        </span>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/40 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            SERVICE_ID
+                          </span>
+                          {smtpConfig?.EMAILJS_SERVICE_ID ? (
+                            <span className="text-gray-300 font-bold select-all truncate max-w-[150px]">
+                              {smtpConfig.EMAILJS_SERVICE_ID}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Set]
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/40 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            TEMPLATE_ID
+                          </span>
+                          {smtpConfig?.EMAILJS_TEMPLATE_ID ? (
+                            <span className="text-gray-300 font-bold select-all truncate max-w-[150px]">
+                              {smtpConfig.EMAILJS_TEMPLATE_ID}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Set]
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/40 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            PUBLIC_KEY
+                          </span>
+                          {smtpConfig?.EMAILJS_PUBLIC_KEY ? (
+                            <span className="text-gray-300 font-bold select-all truncate max-w-[150px]">
+                              {smtpConfig.EMAILJS_PUBLIC_KEY}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Set]
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/40 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            PRIVATE_KEY
+                          </span>
+                          {smtpConfig?.EMAILJS_PRIVATE_KEY_SET ? (
+                            <span className="text-green-500 font-bold">
+                              ✓ SECURED (Present)
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Configured / Optional]
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* SMTP SETTINGS */}
+                      <div className="space-y-2 pt-2 border-t border-[#1a1a1a]">
+                        <span className="block text-[9px] uppercase tracking-widest text-[#666] font-semibold">
+                          SMTP Relay Server Status
+                        </span>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/50 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            SMTP_HOST
+                          </span>
+                          {smtpConfig?.SMTP_HOST ? (
+                            <span className="text-gray-300 font-bold select-all truncate max-w-[150px]">
+                              {smtpConfig.SMTP_HOST}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Set]
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/50 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            SMTP_PORT
+                          </span>
+                          <span className="text-gray-300 font-bold">
+                            {smtpConfig?.SMTP_PORT || "587"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/50 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            SMTP_USER
+                          </span>
+                          {smtpConfig?.SMTP_USER ? (
+                            <span className="text-gray-300 font-bold select-all truncate max-w-[150px]">
+                              {smtpConfig.SMTP_USER}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Set]
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between border-b border-[#1F1F1F]/50 pb-1.5 pl-2 text-[10px]">
+                          <span className="text-gray-500 font-bold">
+                            SMTP_PASS
+                          </span>
+                          {smtpConfig?.SMTP_PASS_SET ? (
+                            <span className="text-green-500 font-bold">
+                              ✓ SECURED (Present)
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 font-sans italic">
+                              [Not Configured]
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Company Recipient */}
+                      <div className="flex items-center justify-between pt-2 border-t border-[#1A1A1A] text-[10px]">
+                        <span className="text-gray-400 font-bold">
+                          RECIPIENT_EMAIL
+                        </span>
+                        <span className="text-gray-350 font-sans select-all font-semibold">
+                          {smtpConfig?.COMPANY_EMAIL}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-[#1A1A1A]/30 border border-[#2A2A2A] rounded-sm text-xs text-gray-500 font-sans leading-relaxed">
+                    <p className="font-semibold text-gray-400 mb-1.5 font-mono uppercase text-[9px] tracking-wider text-[#D4AF37]">
+                      Active Mail Delivery Advice:
+                    </p>
+                    {smtpConfig?.activeMode === "emailjs" ? (
+                      <span>
+                        EmailJS REST API is fully configured and live! Emails
+                        are triggered securely over HTTPS Port 443, making it
+                        completely reliable is bypass-blocked SMTP ports on
+                        Cloud Run and local sandboxes.
+                      </span>
+                    ) : (
+                      <span>
+                        For port-blocked hosting environments (like GCP Cloud
+                        Run), setting up <strong>EmailJS</strong> is highly
+                        recommended! Provide{" "}
+                        <code className="text-gray-300">
+                          EMAILJS_SERVICE_ID
+                        </code>
+                        ,{" "}
+                        <code className="text-gray-300">
+                          EMAILJS_TEMPLATE_ID
+                        </code>
+                        , and{" "}
+                        <code className="text-gray-300">
+                          EMAILJS_PUBLIC_KEY
+                        </code>{" "}
+                        in environment settings to route over standard HTTPS.
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* TESTER ACTION CARD */}
+                <div className="lg:col-span-7 bg-[#0F0F0F] border border-[#2A2A2A] rounded-sm p-6 space-y-6">
+                  <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-[#D4AF37]">
+                    {smtpConfig?.activeMode === "emailjs"
+                      ? "EmailJS Gateway Verification"
+                      : "SMTP Gateway Verification"}
+                  </h3>
+                  <p className="text-xs text-gray-400 leading-relaxed font-sans">
+                    {smtpConfig?.activeMode === "emailjs"
+                      ? "Use this tool to test your EmailJS REST API dispatch channel immediately. It maps test parameters such as {{name}}, {{email}}, and {{message}} into your template parameters."
+                      : "Use this tool to test your SMTP server configuration immediately. It sends a high-contrast HTML diagnostic email directly through Nodemailer."}
+                  </p>
+
+                  <form onSubmit={handleTestSmtp} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-2">
+                        Test Recipient Address
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        className="w-full px-4 py-3 rounded-sm bg-[#141414] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans"
+                        placeholder="e.g. abc@gmail.com"
+                        value={testRecipient}
+                        onChange={(e) => setTestRecipient(e.target.value)}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={testLoading}
+                      className="inline-flex items-center justify-center w-full px-5 py-3 rounded-sm bg-[#D4AF37] text-black hover:bg-[#c49f2a] font-bold text-xs uppercase tracking-wider cursor-pointer transition-all disabled:opacity-50 font-mono font-bold"
+                    >
+                      {testLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin text-black" />
+                          <span>Dispatching Diagnostic Triggers...</span>
+                        </>
+                      ) : (
+                        <span>Verify Connection & Dispatch Test Mail</span>
+                      )}
+                    </button>
+                  </form>
+
+                  {/* FAILURE DIAGNOSTIC RESULT BOX */}
+                  {testError && (
+                    <div className="p-4 bg-[#1A1111] border border-red-900/30 rounded-sm text-xs font-mono leading-relaxed space-y-2 animate-fade-in">
+                      <div className="flex items-center space-x-1.5 text-red-400 font-bold">
+                        <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                        <span>
+                          {smtpConfig?.activeMode === "emailjs"
+                            ? "EmailJS Delivery Failure!"
+                            : "SMTP Connection Failure Detected!"}
+                        </span>
+                      </div>
+                      <p className="text-red-300 font-sans">{testError}</p>
+
+                      {testResult &&
+                        !testResult.success &&
+                        testResult.details && (
+                          <div className="mt-3 p-3 bg-[#0F0505] border border-red-950/40 rounded-sm text-[10px] text-gray-400 space-y-1">
+                            <span className="block text-[9px] uppercase tracking-widest font-bold text-red-400 border-b border-red-950 pb-1.5 mb-1.5">
+                              {testResult.details.code === "EMAILJS_ERR"
+                                ? "EmailJS Server Diagnostics"
+                                : "Nodemailer Protocol Diagnostics"}
+                            </span>
+                            <div>
+                              <span className="text-gray-500">
+                                Attempted Host:
+                              </span>{" "}
+                              <span className="text-gray-300 font-semibold select-all">
+                                {testResult.details.host || "Not Set"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">
+                                Attempted Port:
+                              </span>{" "}
+                              <span className="text-gray-300 select-all">
+                                {testResult.details.port || "587"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Error Code:</span>{" "}
+                              <span className="text-red-400 font-bold select-all">
+                                {testResult.details.code || "HANDSHAKE_FAIL"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">
+                                Raw Stack/Reason:
+                              </span>{" "}
+                              <span className="text-red-300/90 leading-normal block max-h-24 overflow-y-auto select-all bg-[#080303] p-1.5 mt-1 border border-red-950/20 rounded-sm">
+                                {testResult.details.error ||
+                                  "No raw description available."}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                      <div className="pt-3 border-t border-red-900/20 text-[10px] text-gray-400 space-y-1">
+                        <p className="font-semibold text-[#D4AF37] flex items-center uppercase tracking-wider text-[9px] mb-1">
+                          💡 Common Fixes Checklist:
+                        </p>
+                        <ul className="list-disc pl-4 space-y-1 font-sans text-[11px] leading-relaxed">
+                          {smtpConfig?.activeMode === "emailjs" ? (
+                            <>
+                              <li>
+                                Ensure your Service ID, Template ID, and Public
+                                Key are accurate.
+                              </li>
+                              <li>
+                                Check if your template fields map to variables
+                                like <code>{"{{name}}"}</code>,{" "}
+                                <code>{"{{email}}"}</code>,{" "}
+                                <code>{"{{phone}}"}</code>,{" "}
+                                <code>{"{{message}}"}</code>.
+                              </li>
+                              <li>
+                                Verify your EmailJS account is not exceeding
+                                monthly send limits.
+                              </li>
+                            </>
+                          ) : (
+                            <>
+                              <li>
+                                If using Gmail SMTP, verify you created &
+                                utilized an <strong>App Password</strong> (not
+                                your normal password).
+                              </li>
+                              <li>
+                                Ensure SMTP_PORT is correct: Port port{" "}
+                                <strong>587</strong> is standard for TLS
+                                (secure: false). Port <strong>465</strong>{" "}
+                                requires secure: true.
+                              </li>
+                              <li>
+                                Verify that host connection coordinates are
+                                correct (e.g. <code>smtp.gmail.com</code> or
+                                your corporate host).
+                              </li>
+                              <li>
+                                Confirm internet access on your container/host
+                                node.
+                              </li>
+                            </>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUCCESS DIAGNOSTIC RESULT BOX */}
+                  {testResult && testResult.success && (
+                    <div className="p-4 bg-[#111A11] border border-green-900/30 rounded-sm text-xs font-mono leading-relaxed space-y-2 animate-fade-in">
+                      <div className="flex items-center space-x-1.5 text-green-400 font-bold">
+                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                        <span>
+                          {testResult.details?.mode === "emailjs"
+                            ? "EmailJS Dispatched Successfully!"
+                            : "SMTP Dispatched Successfully!"}
+                        </span>
+                      </div>
+
+                      <p className="text-green-300 font-sans text-xs">
+                        {testResult.details?.mode === "emailjs"
+                          ? "A live test inquiry has been triggered via EmailJS API. Check your configured template recipients!"
+                          : "A verification package has been logged via Nodemailer. Check your inbox!"}
+                      </p>
+
+                      <div className="mt-3 p-3 bg-[#0B0B0B] border border-green-900/10 rounded-sm text-[10px] text-gray-400 space-y-1">
+                        <span className="block text-[9px] uppercase tracking-widest font-bold text-[#D4AF37] border-b border-[#222] pb-1.5 mb-1.5 font-mono">
+                          {testResult.details?.mode === "emailjs"
+                            ? "EmailJS Gateway Metadata"
+                            : "Nodemailer Dispatch Envelope"}
+                        </span>
+                        {testResult.details?.mode === "emailjs" ? (
+                          <>
+                            <div>
+                              <span className="text-gray-500 font-mono">
+                                Delivery Channel:
+                              </span>{" "}
+                              <span className="text-cyan-400 font-mono">
+                                HTTPS Port 443 API
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 font-mono">
+                                Recipient Match:
+                              </span>{" "}
+                              <span className="text-gray-300 font-semibold font-sans">
+                                {testResult.details.recipient}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 font-mono font-bold">
+                                Telemetry Log:
+                              </span>{" "}
+                              <span className="text-gray-400 block p-1.5 mt-1 bg-[#141414] border border-[#222] max-h-16 overflow-y-auto font-mono select-all text-[9.5px] leading-relaxed">
+                                {testResult.details.telemetry}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <span className="text-gray-500 font-mono">
+                                Message ID:
+                              </span>{" "}
+                              <span className="text-gray-300 select-all font-mono">
+                                {testResult.details?.messageId}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 font-mono">
+                                Accepted List:
+                              </span>{" "}
+                              <span className="text-gray-300 font-sans">
+                                {JSON.stringify(testResult.details?.accepted)}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 font-mono">
+                                Response Code:
+                              </span>{" "}
+                              <span className="text-gray-300 font-mono">
+                                {testResult.details?.response}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 font-mono">
+                                Trace:
+                              </span>{" "}
+                              <span className="text-[#D4AF37] font-mono">
+                                {testResult.details?.telemetry}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : loading ? (
+          <div className="flex items-center justify-center py-20 bg-[#141414] border border-[#2A2A2A] rounded-sm">
+            <Loader2 className="h-6 w-6 text-[#D4AF37] animate-spin mr-2" />
+            <span className="text-gray-500 text-xs font-mono tracking-wider uppercase">
+              Aligning core CRM dataset...
+            </span>
+          </div>
+        ) : activeLeads.length === 0 ? (
+          <div className="text-center py-20 bg-[#141414] border border-[#2A2A2A] rounded-sm">
+            <p className="text-xs text-gray-500 uppercase tracking-widest">
+              {isCustomersTab
+                ? "No leads have been marked as 'converted' yet. Transition a lead state on the Leads Board to populate converted customers."
+                : "No customer inquiries recorded in this catalog yet."}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {activeLeads.map((lead) => (
+              <div
+                key={lead._id}
+                className="p-6 bg-[#141414] border border-[#2A2A2A] rounded-sm hover:border-[#D4AF37]/40 transition-all duration-300 flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
+              >
+                {/* Visual Bio section */}
+                <div className="space-y-1.5 flex-grow">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-serif italic text-white tracking-wide">
+                      {lead.name}
+                    </h3>
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      • {new Date(lead.createdAt).toLocaleDateString()}
+                    </span>
+                    {/* Status Pill Rendering */}
+                    <span
+                      className={`text-[9px] uppercase font-bold tracking-widest font-mono px-2 py-0.5 rounded-sm !leading-none ${
+                        lead.status === "new"
+                          ? "bg-red-500/10 border border-red-500/30 text-red-400"
+                          : lead.status === "contacted"
+                            ? "bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37]"
+                            : "bg-green-500/10 border border-green-500/30 text-green-400"
+                      }`}
+                    >
+                      {lead.status}
+                    </span>
+                  </div>
+
+                  {/* Core Coordinates */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-x-6 gap-y-1 text-xs text-gray-400">
+                    <span className="flex items-center space-x-1.5">
+                      <Mail className="h-3.5 w-3.5 text-gray-600 shrink-0" />
+                      <a
+                        href={`mailto:${lead.email}`}
+                        className="hover:text-[#D4AF37] transition-colors underline decoration-gray-800 font-sans"
+                      >
+                        {lead.email}
+                      </a>
+                    </span>
+                    <span className="flex items-center space-x-1.5">
+                      <Phone className="h-3.5 w-3.5 text-gray-600 shrink-0" />
+                      <a
+                        href={`tel:${lead.phone}`}
+                        className="hover:text-[#D4AF37] transition-colors font-sans"
+                      >
+                        {lead.phone}
+                      </a>
+                    </span>
+                  </div>
+
+                  {/* Inquiry details text block */}
+                  <div className="p-3.5 bg-[#0F0F0F] rounded-sm text-xs sm:text-sm text-gray-300 leading-relaxed max-w-4xl border border-[#2A2A2A] mt-2 font-sans">
+                    {lead.message}
+                  </div>
+
+                  {/* Display Custom Client Data / CRM Specific metadata if present */}
+                  {(lead.requirements ||
+                    lead.paymentAmount ||
+                    lead.advancePayment) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 mt-3 border-t border-[#2a2a2a]">
+                      {lead.requirements ? (
+                        <div className="text-xs">
+                          <span className="block text-[9px] uppercase tracking-widest font-mono text-gray-500 mb-0.5">
+                            Custom Requirements
+                          </span>
+                          <p className="text-gray-300 font-sans leading-relaxed">
+                            {lead.requirements}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-600 font-mono italic">
+                          No custom requirements logged
+                        </div>
+                      )}
+                      {lead.paymentAmount ? (
+                        <div className="text-xs">
+                          <span className="block text-[9px] uppercase tracking-widest font-mono text-gray-500 mb-0.5">
+                            Agreement Amount
+                          </span>
+                          <p className="text-[#D4AF37] font-semibold font-mono">
+                            {lead.paymentAmount}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-600 font-mono italic">
+                          No pricing logged
+                        </div>
+                      )}
+                      {lead.advancePayment ? (
+                        <div className="text-xs">
+                          <span className="block text-[9px] uppercase tracking-widest font-mono text-gray-500 mb-0.5">
+                            Advance Booking Paid
+                          </span>
+                          <p className="text-green-500 font-semibold font-mono">
+                            {lead.advancePayment}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-600 font-mono italic">
+                          No booking advance logged
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* State alteration controls column */}
+                <div className="flex sm:flex-row md:flex-col items-stretch gap-2 shrink-0 w-full sm:w-auto md:min-w-44">
+                  <button
+                    onClick={() => openEdit(lead)}
+                    className="px-3 py-2 bg-[#141414] border border-[#2A2A2A] hover:border-[#D4AF37]/50 rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-[#1A1A1A] transition text-[#D4AF37] text-center cursor-pointer flex items-center justify-center space-x-1"
+                  >
+                    <Edit2 className="h-3 w-3 shrink-0" />
+                    <span>Edit Details</span>
+                  </button>
+
+                  {lead.status !== "new" && (
+                    <button
+                      onClick={() => handleUpdateStatus(lead._id, "new")}
+                      className="px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-[#141414] transition text-red-400 text-center cursor-pointer"
+                    >
+                      Mark Unreached
+                    </button>
+                  )}
+                  {lead.status !== "contacted" && (
+                    <button
+                      onClick={() => handleUpdateStatus(lead._id, "contacted")}
+                      className="px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-[#141414] transition text-[#D4AF37] text-center cursor-pointer"
+                    >
+                      Mark Contacted
+                    </button>
+                  )}
+                  {lead.status !== "converted" && (
+                    <button
+                      onClick={() => handleUpdateStatus(lead._id, "converted")}
+                      className="px-3 py-2 bg-[#D4AF37] hover:bg-[#c49f2a] rounded-sm text-[10px] font-bold font-mono tracking-widest uppercase transition text-black text-center cursor-pointer flex items-center justify-center space-x-1"
+                    >
+                      <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                      <span>Convert Client</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Add Client Dialog Overlay */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-sm"
+            />
+
+            {/* Content wrapper */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              className="relative w-full max-w-lg bg-[#141414] border border-[#2A2A2A] rounded-sm p-6 sm:p-8 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-4 mb-6">
+                <div>
+                  <h3 className="text-base font-serif italic text-white tracking-wide">
+                    Register New Client
+                  </h3>
+                  <p className="text-[10px] uppercase tracking-widest text-[#666] mt-1">
+                    Directly enroll a client and book custom presets
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddClientSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      FullName *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Eleanor Vance"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Initial Status
+                    </label>
+                    <select
+                      value={newStatus}
+                      onChange={(e) => setNewStatus(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-mono rounded-sm"
+                    >
+                      <option value="new">New Inquiry Lead</option>
+                      <option value="contacted">Lead Contacted</option>
+                      <option value="converted">
+                        Studio Customer (Converted)
+                      </option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="eleanor@example.com"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="+1 (555) 309-8080"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                    Client Requirements (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Soft warm studio portrait backgrounds, high-contrast black & white style preferences..."
+                    value={newRequirements}
+                    onChange={(e) => setNewRequirements(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Agreement Amount / Payment (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. $1,800"
+                      value={newPayment}
+                      onChange={(e) => setNewPayment(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-mono rounded-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Booking Advance Paid (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. $500"
+                      value={newAdvance}
+                      onChange={(e) => setNewAdvance(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-mono rounded-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                    Shoot Vision / Timeline Details (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Wedding date, specific locations, visual ideas..."
+                    value={newInquiryMsg}
+                    onChange={(e) => setNewInquiryMsg(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm resize-none"
+                  />
+                </div>
+
+                {addClientError && (
+                  <div className="p-3 bg-[#1A1111] border border-red-900/30 text-xs text-red-500 rounded-sm font-sans flex items-start space-x-1.5">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+                    <span>{addClientError}</span>
+                  </div>
+                )}
+
+                <div className="border-t border-[#2A2A2A] pt-4 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-4 py-2 bg-transparent text-gray-400 hover:text-white border border-[#2A2A2A] hover:border-gray-500 rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest cursor-pointer transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingNewClient}
+                    className="px-5 py-2 bg-[#D4AF37] hover:bg-[#c49f2a] text-black rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest cursor-pointer transition-all disabled:opacity-50 flex items-center space-x-1"
+                  >
+                    {isSubmittingNewClient ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1 text-black" />
+                        <span>Enrolling...</span>
+                      </>
+                    ) : (
+                      <span>Add Record</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Client Dialog Overlay */}
+      <AnimatePresence>
+        {editingLead !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingLead(null)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-sm"
+            />
+
+            {/* Content wrapper */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              className="relative w-full max-w-lg bg-[#141414] border border-[#2A2A2A] rounded-sm p-6 sm:p-8 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-4 mb-6">
+                <div>
+                  <h3 className="text-base font-serif italic text-white tracking-wide">
+                    Edit Client Details
+                  </h3>
+                  <p className="text-[10px] uppercase tracking-widest text-[#666] mt-1">
+                    Alter custom specifications, status, and payment logs
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingLead(null)}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditClientSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      FullName *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Eleanor Vance"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Status Column
+                    </label>
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-mono rounded-sm"
+                    >
+                      <option value="converted">
+                        Studio Customer (Converted)
+                      </option>
+                      <option value="contacted">Lead Contacted</option>
+                      <option value="new">New Inquiry Lead</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="eleanor@example.com"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="Phone Number"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                    Client Requirements (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Event visual design, custom portraits, venue requirements..."
+                    value={editRequirements}
+                    onChange={(e) => setEditRequirements(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-sans rounded-sm resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Agreement Amount / Payment (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. $1,800"
+                      value={editPayment}
+                      onChange={(e) => setEditPayment(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-mono rounded-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 font-mono uppercase tracking-widest mb-1.5">
+                      Advance Booking Deposit Paid (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. $500"
+                      value={editAdvance}
+                      onChange={(e) => setEditAdvance(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F0F0F] border border-[#2A2A2A] text-white placeholder-gray-600 text-xs focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-all font-mono rounded-sm"
+                    />
+                  </div>
+                </div>
+
+                {editClientError && (
+                  <div className="p-3 bg-[#1A1111] border border-red-900/30 text-xs text-red-500 rounded-sm font-sans flex items-start space-x-1.5">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+                    <span>{editClientError}</span>
+                  </div>
+                )}
+
+                <div className="border-t border-[#2A2A2A] pt-4 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingLead(null)}
+                    className="px-4 py-2 bg-transparent text-gray-400 hover:text-white border border-[#2A2A2A] hover:border-[#2A2A2A] rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest cursor-pointer transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingEdit}
+                    className="px-5 py-2 bg-[#D4AF37] hover:bg-[#c49f2a] text-black rounded-sm text-[10px] font-mono font-bold uppercase tracking-widest cursor-pointer transition-all disabled:opacity-50 flex items-center space-x-1"
+                  >
+                    {isSubmittingEdit ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1 text-black" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <Footer />
+    </div>
+  );
+};

@@ -1,0 +1,6 @@
+{
+  "name": "The Pixel Studio",
+  "description": "A professional photography portfolio, enquiry system, project archive, and admin CRM dashboard for The Pixel Studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["PHOTO_STUDIO_PORTFOLIO", "ADMIN_CRM", "MONGODB", "CLOUDINARY", "OPTIONAL_WEBHOOK_NOTIFICATIONS"]
+}
