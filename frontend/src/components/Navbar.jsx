@@ -31,20 +31,20 @@ export const Navbar = () => {
             <div className="flex items-center space-x-1.5 sm:space-x-2" id="segmented_brand_badge">
               {/* The Pixel Studio Pill */}
               <div className="px-2.5 py-1 bg-[#141414]/80 border border-[#2A2A2A] rounded-lg flex flex-col justify-center items-center text-center shadow-md transition-all duration-300 group-hover:border-[#D4AF37]/30 group-hover:bg-[#D4AF37]/5">
-                <span className="font-serif italic text-xs sm:text-sm font-medium text-[#F5F5F5] tracking-wide leading-tight">The Pixel Studio</span>
-                <span className="text-[#D4AF37] text-[7px] sm:text-[8px] font-bold uppercase tracking-widest font-mono leading-none mt-0.5">The Pixel Studio</span>
+                <span className="font-serif italic text-xs sm:text-sm font-medium text-[#F5F5F5] tracking-wide leading-tight">The Pixel</span>
+                <span className="text-[#D4AF37] text-[7px] sm:text-[8px] font-bold uppercase tracking-widest font-mono leading-none mt-0.5">Studio</span>
               </div>
               
               {/* Amperstand Separator */}
-              <div className="w-6 h-6 sm:w-7 sm:h-7 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-md flex items-center justify-center text-[#D4AF37] font-serif italic text-xs sm:text-sm font-black shadow-inner transition-all duration-300 group-hover:bg-[#D4AF37]/20">
+              {/* <div className="w-6 h-6 sm:w-7 sm:h-7 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-md flex items-center justify-center text-[#D4AF37] font-serif italic text-xs sm:text-sm font-black shadow-inner transition-all duration-300 group-hover:bg-[#D4AF37]/20">
                 &
-              </div>
+              </div> */}
 
               {/* The Pixel Studio Pill */}
-              <div className="px-2.5 py-1 bg-[#141414]/80 border border-[#2A2A2A] rounded-lg flex flex-col justify-center items-center text-center shadow-md transition-all duration-300 group-hover:border-[#D4AF37]/30 group-hover:bg-[#D4AF37]/5">
+              {/* <div className="px-2.5 py-1 bg-[#141414]/80 border border-[#2A2A2A] rounded-lg flex flex-col justify-center items-center text-center shadow-md transition-all duration-300 group-hover:border-[#D4AF37]/30 group-hover:bg-[#D4AF37]/5">
                 <span className="font-serif italic text-xs sm:text-sm font-medium text-[#F5F5F5] tracking-wide leading-tight">The Pixel Studio</span>
                 <span className="text-[#D4AF37] text-[7px] sm:text-[8px] font-bold uppercase tracking-widest font-mono leading-none mt-0.5">Photography</span>
-              </div>
+              </div> */}
             </div>
           </Link>
 
